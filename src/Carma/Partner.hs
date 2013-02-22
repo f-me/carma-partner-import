@@ -69,16 +69,32 @@ data IntegrationDicts =
 type IntegrationMonad = Reader IntegrationDicts
 
 
-loadIntegrationDicts :: FilePath
-                     -> FilePath
-                     -> FilePath
-                     -> FilePath
+-- | Paths to dictionaries used in 'IntegrationDicts', in that order.
+type DictPaths = (FilePath, FilePath, FilePath, FilePath)
+
+
+-- | Load integration dictionaries from CaRMa or local files.
+--
+-- When CaRMa is used, dictionary names used are @DealerCities@,
+-- @PSACarMakers@, @TaxSchemes@, @PSAServices@, respectively.
+loadIntegrationDicts :: Either Int DictPaths
+                     -- ^ CaRMa port or local dictionary paths.
                      -> IO (Maybe IntegrationDicts)
-loadIntegrationDicts cityFile carFile taxFile servFile = do
-  cityDict'    <- loadDict cityFile
-  carDict'     <- loadDict carFile
-  taxDict'     <- loadDict taxFile
-  servDict'    <- loadDict servFile
+loadIntegrationDicts arg = do
+  (cityDict', carDict', taxDict', servDict') <-
+      case arg of
+        (Left cp) ->
+            liftM4 (,,,) 
+               (readDictionary cp "DealerCities")
+               (readDictionary cp "PSACarMakers")
+               (readDictionary cp "TaxSchemes")
+               (readDictionary cp "PSAServices")
+        (Right (cityFile, carFile, taxFile, servFile)) ->
+            liftM4 (,,,)
+               (loadDict cityFile)
+               (loadDict carFile)
+               (loadDict taxFile)
+               (loadDict servFile)
   return $ liftM4 IntegrationDicts cityDict' carDict' taxDict' servDict'
 
 
