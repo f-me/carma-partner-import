@@ -230,6 +230,14 @@ dictField :: Dict -> FieldProcessor
 dictField dict = \fieldValue -> valueOfLabel fieldValue dict
 
 
+-- | Version of 'dictField' which ignores empty field values.
+dictField0 :: Dict -> FieldProcessor
+dictField0 dict =
+  \fieldValue -> if B8.null fieldValue
+                 then Just fieldValue
+                 else valueOfLabel fieldValue dict
+
+
 -- | Make a list of row processors from mapping between field names,
 -- processors (applied to field values) and error types (used when
 -- respective processors fail). Thus, only single-field processors are
@@ -334,11 +342,11 @@ fieldValidationProcessors =
         , UnknownCar
         )
       , ( e8 "Форма налогообложения"
-        , dictField <$> asks taxDict
+        , dictField0 <$> asks taxDict
         , UnknownTaxScheme
         )
       , ( e8 "Услуга (техпомощь / эвакуатор / техпомощь и эвакуатор)"
-        , dictField <$> asks servDict
+        , dictField0 <$> asks servDict
         , UnknownService
         )
       ]
