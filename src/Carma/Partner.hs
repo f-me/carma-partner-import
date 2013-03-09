@@ -564,21 +564,19 @@ processData carmaPort input output dicts = do
   -- Write BOM mark
   BS.writeFile output bom
 
-  -- We use sinkHandle to *append* processing results after bom header row.
-  outHandle <- openFile output AppendMode
-
   -- Read head row to find out column order
   Just headRow <- runResourceT $
        sourceFile input $=
        CSV.intoCSV csvSettings $$
        CL.head :: IO (Maybe (CSV.Row BS.ByteString))
-  -- Start output file with header row
-  runResourceT $ yield headRow $= CSV.fromCSV csvSettings $$ sinkHandle outHandle
+  -- Start output file with header row. We use sinkHandle to *append*
+  -- processing results after bom header row.
+  runResourceT $ yield headRow $= CSV.fromCSV csvSettings $$
+                 sinkIOHandle (openFile output AppendMode)
 
   runResourceT $
        sourceFile input $=
        CSV.intoCSV csvSettings $=
        (CL.mapM $ processRow processors newPartnerProcessors headRow carmaPort) $=
        (CSV.fromCSV csvSettings) $$
-       (sinkHandle outHandle)
-  hClose outHandle
+       (sinkIOHandle (openFile output AppendMode))
