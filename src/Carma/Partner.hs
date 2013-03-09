@@ -36,8 +36,6 @@ import qualified Data.ByteString.Char8 as B8
 import qualified Data.Text as T
 import Data.Text.Encoding
 
-import System.Environment
-import System.Exit
 import System.IO
 
 
