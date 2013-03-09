@@ -555,7 +555,7 @@ skipBomInputHandle fileName = do
   eof <- hIsEOF h
   when (not eof) $ do
     c <- hLookAhead h
-    when (c == '\xef') $ hSeek h AbsoluteSeek 3
+    when (c == '\65279') $ hSeek h AbsoluteSeek 3
   return h
 
 
