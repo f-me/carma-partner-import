@@ -559,6 +559,13 @@ processData carmaPort input output dicts = do
   let processors = runReader mkValidationProcessors dicts ++
                    [remappingProcessor carmaFieldMapping]
       newPartnerProcessors = [fieldSetterProcessor carmaConstFields]
+      bom = B8.pack ['\xef', '\xbb', '\xbf']
+
+  -- Write BOM mark
+  BS.writeFile output bom
+
+  -- We use sinkHandle to *append* processing results after bom header row.
+  outHandle <- openFile output AppendMode
 
   -- Read head row to find out column order
   Just headRow <- runResourceT $
@@ -566,10 +573,8 @@ processData carmaPort input output dicts = do
        CSV.intoCSV csvSettings $$
        CL.head :: IO (Maybe (CSV.Row BS.ByteString))
   -- Start output file with header row
-  runResourceT $ yield headRow $= CSV.fromCSV csvSettings $$ sinkFile output
+  runResourceT $ yield headRow $= CSV.fromCSV csvSettings $$ sinkHandle outHandle
 
-  -- We use sinkHandle to *append* processing results to header row.
-  outHandle <- openFile output AppendMode
   runResourceT $
        sourceFile input $=
        CSV.intoCSV csvSettings $=
