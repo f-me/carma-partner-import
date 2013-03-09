@@ -548,7 +548,7 @@ csvSettings = CSV.CSVS ';' (Just '"') (Just '"') ';'
 
 
 -- | Provide a read-only handle to a file, skipping first 3 bytes if
--- UTF-8 BOM is present (otherwise, read the file from beginning).
+-- UTF-8 BOM is present (otherwise, read from the beginning).
 skipBomInputHandle :: FilePath -> IO Handle
 skipBomInputHandle fileName = do
   h <- openFile fileName ReadMode
