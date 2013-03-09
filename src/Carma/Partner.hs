@@ -547,6 +547,14 @@ csvSettings :: CSV.CSVSettings
 csvSettings = CSV.CSVS ';' (Just '"') (Just '"') ';'
 
 
+-- | Provide read-only handle to a file, skipping first 3 bytes.
+skipBomInputHandle :: FilePath -> IO Handle
+skipBomInputHandle fileName = do
+  h <- openFile fileName ReadMode
+  hSeek h AbsoluteSeek 3
+  return h
+
+
 processData :: Int
             -- ^ CaRMa port.
             -> FilePath
@@ -566,7 +574,7 @@ processData carmaPort input output dicts = do
 
   -- Read head row to find out column order
   Just headRow <- runResourceT $
-       sourceFile input $=
+       sourceIOHandle (skipBomInputHandle input) $=
        CSV.intoCSV csvSettings $$
        CL.head :: IO (Maybe (CSV.Row BS.ByteString))
   -- Start output file with header row. We use sinkHandle to *append*
@@ -575,7 +583,7 @@ processData carmaPort input output dicts = do
                  sinkIOHandle (openFile output AppendMode)
 
   runResourceT $
-       sourceFile input $=
+       sourceIOHandle (skipBomInputHandle input) $=
        CSV.intoCSV csvSettings $=
        (CL.mapM $ processRow processors newPartnerProcessors headRow carmaPort) $=
        (CSV.fromCSV csvSettings) $$
