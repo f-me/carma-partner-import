@@ -19,7 +19,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 
-import Data.Attoparsec.Char8
+import Data.Attoparsec.Char8 hiding (char8)
 
 import Data.Dict
 import Data.Either
@@ -554,8 +554,11 @@ skipBomInputHandle fileName = do
   h <- openFile fileName ReadMode
   eof <- hIsEOF h
   when (not eof) $ do
+    hSetEncoding h char8
     c <- hLookAhead h
-    when (c == '\65279') $ hSeek h AbsoluteSeek 3
+    print c
+    when (c == '\xef') $ hSeek h AbsoluteSeek 3
+    hSetEncoding h utf8
   return h
 
 
