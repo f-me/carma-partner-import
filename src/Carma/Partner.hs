@@ -25,6 +25,7 @@ import Data.Dict
 import Data.Either
 import Data.List
 import qualified Data.Map as M
+import qualified Data.HashMap.Strict as HM
 
 import Data.Conduit
 import Data.Conduit.Binary
@@ -433,8 +434,13 @@ updateRowServices cp pid row = do
   -- Write service IDs to partner
   let servRef = B8.intercalate "," $
                 map (\i -> B8.pack $ "partner_service:" ++ (show i)) servIds
-  _ <- updatePartner cp pid (M.singleton "services" servRef)
+  _ <- updatePartner cp pid (HM.singleton "services" servRef)
   return ()
+
+
+-- | Repack CSV row into 'InstanceData'.
+rowToInstanceData :: Row -> InstanceData
+rowToInstanceData = HM.fromList . M.toList
 
 
 -- | Check id, then sequentially apply a list of processors to row. If
@@ -481,12 +487,14 @@ processRow procs newProcs columnOrder cp freshRow = liftIO $ do
                 False -> return Nothing
                 True  -> Just <$>
                     case pid of
-                      Just n  -> updatePartner cp n processedRow
-                      -- Additionally newProcs when creating new
+                      Just n  -> updatePartner cp n $
+                                 rowToInstanceData processedRow
+                      -- Additionally apply newProcs when creating new
                       -- partners
                       Nothing -> createPartner cp $
-                                 fst $
-                                 applyProcessors newProcs processedRow
+                                 rowToInstanceData $ fst $
+                                 applyProcessors newProcs $
+                                 processedRow
 
   -- Create services for a new partner using value of "services" field
   -- (must be remapped from CSV field by now; all services must be
@@ -536,9 +544,9 @@ createService :: Int
               -> IO Int
 createService cp pid srv = fst <$>
     (createInstance cp "partner_service" $
-     M.insert "parentId" (B8.pack $ "partner:" ++ (show pid)) $
-     M.insert "serviceName" srv $
-     M.empty)
+     HM.insert "parentId" (B8.pack $ "partner:" ++ (show pid)) $
+     HM.insert "serviceName" srv $
+     HM.empty)
 
 
 -- | Default settings for partner list CSV files: semicolon-separated
