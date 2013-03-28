@@ -552,7 +552,7 @@ createService cp pid srv = fst <$>
 -- | Default settings for partner list CSV files: semicolon-separated
 -- fields, quoted.
 csvSettings :: CSV.CSVSettings
-csvSettings = CSV.CSVS ';' (Just '"') (Just '"') ';'
+csvSettings = CSV.CSVSettings ';' (Just '"')
 
 
 -- | Provide a read-only handle to a file, skipping first 3 bytes if
