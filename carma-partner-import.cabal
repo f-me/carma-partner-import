@@ -1,5 +1,5 @@
 name:                carma-partner-import
-version:             0.3.0.2
+version:             0.3.0.3
 synopsis:            CaRMa partner import library and tool
 license-file:        LICENSE
 author:              Dmitry Dzhus
@@ -15,36 +15,38 @@ library
     Carma.Partner
 
   build-depends:
-    aeson           == 0.6.*,
-    attoparsec      == 0.10.*,
-    base            == 4.6.*,
-    bytestring      == 0.10.*,
-    carma-dict      == 0.1.*,
-    carma-http      >= 0.1.3 && < 0.2,
-    conduit         == 0.5.*,
-    containers      == 0.5.*,
-    csv-conduit     == 0.3.*,
-    HTTP            == 4000.2.*,
-    network         == 2.4.*,
-    transformers    == 0.3.*,
-    text            == 0.11.*
+    aeson                  == 0.6.*,
+    attoparsec             == 0.10.*,
+    base                   == 4.6.*,
+    bytestring             == 0.10.*,
+    carma-dict             == 0.1.*,
+    carma-http             == 0.2.*,
+    conduit                == 0.5.*,
+    containers             == 0.5.*,
+    csv-conduit            == 0.3.*,
+    HTTP                   == 4000.2.*,
+    network                == 2.4.*,
+    transformers           == 0.3.*,
+    text                   == 0.11.*,
+    unordered-containers   == 0.2.*
 
 executable carma-partner-importer
   ghc-options: -Wall
   main-is:             src/Main.hs
 
   build-depends:
-    aeson           == 0.6.*,
-    attoparsec      == 0.10.*,
-    base            == 4.6.*,
-    bytestring      == 0.10.*,
-    carma-dict      == 0.1.*,
-    carma-http      == 0.1.*,
+    aeson                  == 0.6.*,
+    attoparsec             == 0.10.*,
+    base                   == 4.6.*,
+    bytestring             == 0.10.*,
+    carma-dict             == 0.1.*,
+    carma-http             == 0.2.*,
     carma-partner-import,
-    conduit         == 0.5.*,
-    containers      == 0.5.*,
-    csv-conduit     == 0.3.*,
-    HTTP            == 4000.2.*,
-    network         == 2.4.*,
-    transformers    == 0.3.*,
-    text            == 0.11.*
+    conduit                == 0.5.*,
+    containers             == 0.5.*,
+    csv-conduit            == 0.3.*,
+    HTTP                   == 4000.2.*,
+    network                == 2.4.*,
+    transformers           == 0.3.*,
+    text                   == 0.11.*,
+    unordered-containers   == 0.2.*
