@@ -16,8 +16,9 @@ where
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.IO.Class
+import Control.Monad.Morph
 import Control.Monad.Trans.Reader
+import Control.Monad.Trans.Resource
 
 import Data.Attoparsec.Char8 hiding (char8)
 
@@ -68,33 +69,18 @@ data IntegrationDicts =
 type IntegrationMonad = Reader IntegrationDicts
 
 
--- | Paths to dictionaries used in 'IntegrationDicts', in that order.
-type DictPaths = (FilePath, FilePath, FilePath, FilePath)
-
-
--- | Load integration dictionaries from CaRMa or local files.
---
--- When CaRMa is used, dictionary names used are @DealerCities@,
--- @PSACarMakers@, @TaxSchemes@, @PSAServices@, respectively.
-loadIntegrationDicts :: Either Int DictPaths
-                     -- ^ CaRMa port or local dictionary paths.
+-- | Load integration dictionaries from CaRMa: @DealerCities@,
+-- @PSACarMakers@, @TaxSchemes@, @PSAServices@.
+loadIntegrationDicts :: Int
+                     -- ^ CaRMa port.
                      -> IO (Maybe IntegrationDicts)
-loadIntegrationDicts arg = do
-  (cityDict', carDict', taxDict', servDict') <-
-      case arg of
-        (Left cp) ->
-            liftM4 (,,,) 
-               (readDictionary cp "DealerCities")
-               (readDictionary cp "PSACarMakers")
-               (readDictionary cp "TaxSchemes")
-               (readDictionary cp "PSAServices")
-        (Right (cityFile, carFile, taxFile, servFile)) ->
-            liftM4 (,,,)
-               (loadDict cityFile)
-               (loadDict carFile)
-               (loadDict taxFile)
-               (loadDict servFile)
-  return $ liftM4 IntegrationDicts cityDict' carDict' taxDict' servDict'
+loadIntegrationDicts cp =
+    runCarma defaultCarmaOptions{carmaPort = cp} $ do
+      d1 <- readDictionary "DealerCities"
+      d2 <- readDictionary "PSACarMakers"
+      d3 <- readDictionary "TaxSchemes"
+      d4 <- readDictionary "PSAServices"
+      return $ liftM4 IntegrationDicts d1 d2 d3 d4
 
 
 data RowError = UnknownId
@@ -418,23 +404,21 @@ isUnknownService _                               = False
 -- | Update dependant service model instances and references between
 -- services and parent partner model.
 updateRowServices :: Int
-               -- ^ CaRMa port.
-               -> Int
-               -- ^ Partner ID
-               -> Row
-               -- ^ Processed partner data from CSV (must have
-               -- @services@ field with list of required service
-               -- types).
-               -> IO ()
-updateRowServices cp pid row = do
+                  -- ^ Partner ID
+                  -> Row
+                  -- ^ Processed partner data from CSV (must have
+                  -- @services@ field with list of required service
+                  -- types).
+                  -> CarmaIO ()
+updateRowServices pid row = do
   -- Fetch requires service types from @services@ field of row
   let servs = (B8.split ',' $ row M.! "services") ++ ["rent"]
   -- Create service instances
-  servIds <- forM servs (createService cp pid)
+  servIds <- forM servs (createService pid)
   -- Write service IDs to partner
   let servRef = B8.intercalate "," $
                 map (\i -> B8.pack $ "partner_service:" ++ (show i)) servIds
-  _ <- updatePartner cp pid (HM.singleton "services" servRef)
+  _ <- updatePartner pid (HM.singleton "services" servRef)
   return ()
 
 
@@ -450,18 +434,15 @@ rowToInstanceData = HM.fromList . M.toList
 --
 -- We use keyless 'CSV.Row' as output to maintain initial column
 -- order.
-processRow :: MonadResource m =>
-              [RowProcessor]
+processRow :: [RowProcessor]
            -- ^ CSV row processors.
            -> [RowProcessor]
            -- ^ Processors applied to new partners only.
            -> [FieldName]
            -- ^ Column order for CSV output.
-           -> Int
-           -- ^ CaRMa port.
            -> CSV.MapRow BS.ByteString
-           -> m (CSV.Row BS.ByteString)
-processRow procs newProcs columnOrder cp freshRow = liftIO $ do
+           -> ResourceT CarmaIO (CSV.Row BS.ByteString)
+processRow procs newProcs columnOrder freshRow = lift $ do
   -- Start by trying to read integer value from "id" field to
   -- determine mode of operation for this row (create/update).
   let pidS = freshRow M.! csvIdField
@@ -472,7 +453,7 @@ processRow procs newProcs columnOrder cp freshRow = liftIO $ do
         Just n -> do
           -- If partner id is set, check if it really exists in the
           -- system.
-          res <- instanceExists cp partnerModelName n
+          res <- instanceExists partnerModelName n
           return $ case res of
                      True -> (Just n, [])
                      False -> (Nothing, [UnknownId])
@@ -487,11 +468,11 @@ processRow procs newProcs columnOrder cp freshRow = liftIO $ do
                 False -> return Nothing
                 True  -> Just <$>
                     case pid of
-                      Just n  -> updatePartner cp n $
+                      Just n  -> updatePartner n $
                                  rowToInstanceData processedRow
                       -- Additionally apply newProcs when creating new
                       -- partners
-                      Nothing -> createPartner cp $
+                      Nothing -> createPartner $
                                  rowToInstanceData $ fst $
                                  applyProcessors newProcs $
                                  processedRow
@@ -501,7 +482,7 @@ processRow procs newProcs columnOrder cp freshRow = liftIO $ do
   -- recognized using the services dictionary). Due to impurity this
   -- cannot be implemented as a row processor.
   case (pid, carmaPid, any isUnknownService allErrs) of
-    (Nothing, Just n, False) -> updateRowServices cp n processedRow
+    (Nothing, Just n, False) -> updateRowServices n processedRow
     _ -> return ()
 
   -- Add formatted errors list to output CSV row. If CaRMa request was
@@ -528,22 +509,21 @@ partnerModelName :: String
 partnerModelName = "partner"
 
 
-createPartner :: Int -> InstanceData -> IO Int
-createPartner cp d = fst <$> createInstance cp partnerModelName d
+createPartner :: InstanceData -> CarmaIO Int
+createPartner d = fst <$> createInstance partnerModelName d
 
 
-updatePartner :: Int -> Int -> InstanceData -> IO Int
-updatePartner cp pid d = updateInstance cp partnerModelName pid d >> return pid
+updatePartner :: Int -> InstanceData -> CarmaIO Int
+updatePartner pid d = updateInstance partnerModelName pid d >> return pid
 
 
 createService :: Int
-              -> Int
               -- ^ Parent partner id.
               -> BS.ByteString
               -- ^ Value of @serviceName@ field for service.
-              -> IO Int
-createService cp pid srv = fst <$>
-    (createInstance cp "partner_service" $
+              -> CarmaIO Int
+createService pid srv = fst <$>
+    (createInstance "partner_service" $
      HM.insert "parentId" (B8.pack $ "partner:" ++ (show pid)) $
      HM.insert "serviceName" srv $
      HM.empty)
@@ -578,7 +558,7 @@ processData :: Int
             -- ^ Output filename.
             -> IntegrationDicts
             -> IO ()
-processData carmaPort input output dicts = do
+processData cp input output dicts = do
   let processors = runReader mkValidationProcessors dicts ++
                    [remappingProcessor carmaFieldMapping]
       newPartnerProcessors = [fieldSetterProcessor carmaConstFields]
@@ -597,9 +577,10 @@ processData carmaPort input output dicts = do
   runResourceT $ yield headRow $= CSV.fromCSV csvSettings $$
                  sinkIOHandle (openFile output AppendMode)
 
-  runResourceT $
+
+  runCarma defaultCarmaOptions{carmaPort = cp} $ runResourceT $
        sourceIOHandle (skipBomInputHandle input) $=
        CSV.intoCSV csvSettings $=
-       (CL.mapM $ processRow processors newPartnerProcessors headRow carmaPort) $=
+       (CL.mapM $ processRow processors newPartnerProcessors headRow) $=
        (CSV.fromCSV csvSettings) $$
        (sinkIOHandle (openFile output AppendMode))

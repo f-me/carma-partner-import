@@ -15,24 +15,17 @@ import System.Exit
 import Carma.Partner
 
 usage :: String
-usage = "Usage: " ++
-        "carma-partner-import 8000 dealers.csv out.csv " ++
-        "[DealerCities.json PSACarMakers.json TaxSchemes.json PSAServices.json]"
+usage = "Usage: ./carma-partner-import 8000 dealers.csv out.csv"
 
 
 main :: IO ()
 main = do
   args <- getArgs
-  when (length args < 3) $ putStrLn usage >> exitFailure
+  when (length args /= 3) $ putStrLn usage >> exitFailure
 
   -- Load dictionaries
-  let (cp:input:output:rest) = args
+  let (cp:input:output:_) = args
       carmaPort = read cp
-  Just dicts <-
-      case (length args) of
-        7 -> do
-          let (cityFile:carFile:taxFile:servFile:_) = rest
-          loadIntegrationDicts $ Right (cityFile, carFile, taxFile, servFile)
-        _ -> loadIntegrationDicts $ Left carmaPort
+  Just dicts <- loadIntegrationDicts carmaPort
 
   processData carmaPort input output dicts
