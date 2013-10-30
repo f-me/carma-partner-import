@@ -145,13 +145,18 @@ cityToAddress :: FieldName
               -> RowProcessor
 cityToAddress cityField addressField =
     \row ->
-        let
-            city = row M.! cityField
-            address = row M.! addressField
-            newAddress =
-                BS.concat [e8 "г. ", city, e8 ", ", address]
-        in
-          Right $ M.insert addressField newAddress row
+        case (M.lookup cityField row, M.lookup addressField row) of
+          (Just city, Just address) ->
+              if BS.null address
+              then Right row
+              else Right $ M.insert addressField newAddress row
+                  where
+                    newAddress =
+                        BS.concat [e8 "г. ", city, e8 ", ", address]
+          (Nothing, _) ->
+              Left $ MissingColumns [cityField]
+          (_, Nothing) ->
+              Left $ MissingColumns [addressField]
 
 
 -- | Format phone value.
@@ -408,7 +413,7 @@ remappingProcessor mapping row =
                         in
                           -- Do not create dict-objects keys with
                           -- empty values
-                          if B8.length val == 0
+                          if BS.null val
                           then newRow
                           else M.insert target jsonVal newRow)) l
         remapRes = map (\(csvName, setter) ->
