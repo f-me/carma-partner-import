@@ -25,6 +25,7 @@ import Data.Attoparsec.Char8 hiding (char8)
 import Data.Dict
 import Data.Either
 import Data.List
+import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.HashMap.Strict as HM
 
@@ -270,23 +271,53 @@ carmaFieldMapping =
     , (e8 "Код дилера", "code")
     , (e8 "Город", "city")
     , (e8 "Марка", "makers")
-    , (e8 "Адрес сервисного отдела", "serviceAddress")
-    , (e8 "Телефон сервисного отдела", "servicePhone")
-    , (e8 "Время работы cервисного отдела", "serviceWorking")
-    , (e8 "Адрес Отдела продаж", "salesAddress")
-    , (e8 "Телефон Отдела продаж", "salesPhone")
-    , (e8 "Время работы Отдела продаж", "salesWorking")
-    , (e8 "Юридический адрес Офиса", "addrDeJure")
-    , (e8 "Фактический адрес Офиса", "addrDeFacto")
-    , (e8 "Факс", "fax")
     , (e8 "Ответственное лицо за Assistance", "personInCharge")
-    , (e8 "Контактный телефон ответственного за Assistance", "closeTicketPhone")
-    , (e8 "Еmail ответственного за Assistance", "closeTicketEmail")
     , (e8 "Форма налогообложения", "taxScheme")
     , (e8 "Услуга (техпомощь / эвакуатор / техпомощь и эвакуатор)", "services")
-    , (e8 "Телефон для заказа Услуги", "phone1")
-    , (e8 "Время работы по предоставлению услуги", "workingTime")
     , (e8 "Комментарии", "comment")
+    ]
+
+
+-- | Mapping between CSV column names and fields using dict-objects
+-- JSON schema. Right hand side of an equation sets json field name
+-- and key name. Original CSV value is written either under that key
+-- (when Right) or its note (when Left is used).
+type JSONMapping = [(FieldName, (FieldName, Either FieldName FieldName))]
+
+
+carmaJsonFieldMapping :: JSONMapping
+carmaJsonFieldMapping =
+    [ (e8 "Фактический адрес Офиса",
+       ("addrs", Right "fact"))
+    , (e8 "Юридический адрес Офиса",
+       ("addrs", Right "jure"))
+    , (e8 "Адрес сервисного отдела",
+       ("addrs", Right "serv"))
+    , (e8 "Адрес Отдела продаж",
+       ("addrs", Right "sales"))
+
+    , (e8 "Телефон Отдела продаж",
+       ("phones", Right "sales"))
+    , (e8 "Время работы Отдела продаж",
+       ("phones", Left "sales"))
+
+    , (e8 "Телефон сервисного отдела",
+       ("phones", Right "serv"))
+    , (e8 "Время работы cервисного отдела",
+       ("phones", Left "serv"))
+
+    , (e8 "Факс",
+       ("phones", Right "fax"))
+    , (e8 "Контактный телефон ответственного за Assistance",
+       ("phones", Right "close"))
+
+    , (e8 "Телефон для заказа Услуги",
+       ("phones", Right "disp"))
+    , (e8 "Время работы по предоставлению услуги",
+       ("phones", Left "disp"))
+
+    , (e8 "Еmail ответственного за Assistance",
+       ("emails", Right "close"))
     ]
 
 
@@ -348,23 +379,48 @@ mkValidationProcessors =
       return $ pureProcessors ++ fv
 
 
--- | A processor which renames field names according to a mapping.
--- Only keys mentioned in the mapping are used to build the result
--- row. If some keys are missing from the row, return 'MissingColumns'
--- error.
-remappingProcessor :: [(FieldName, FieldName)] -> RowProcessor
-remappingProcessor keyMapping row =
+data Mapping = Simple [(FieldName, FieldName)]
+             | JSON JSONMapping
+
+
+-- | A processor which renames field names according to a mapping
+-- (simple column renaming / JSON remapping). Only keys mentioned in
+-- the mapping are used to build the result row. If some keys are
+-- missing from the row, return 'MissingColumns' error.
+remappingProcessor :: Mapping -> RowProcessor
+remappingProcessor mapping row =
     let
-        remapRes = map (\(csvName, internalName) ->
+        -- Choose how to build a new target row depending on how
+        -- mapping is defined
+        elems :: [(FieldName, FieldValue -> (Row -> Row))]
+        elems =
+            case mapping of
+              Simple l ->
+                  map (\(csv, target) ->
+                       (csv, M.insert target)) l
+              JSON l ->
+                  map (\(csv, (target, selector)) ->
+                       (csv, \val newRow ->
+                        let
+                            contents = fromMaybe "" (M.lookup target newRow)
+                            jsonVal = setKeyedJsonValue contents selector val
+                        in
+                          -- Do not create dict-objects keys with
+                          -- empty values
+                          if B8.length val == 0
+                          then newRow
+                          else M.insert target jsonVal newRow)) l
+        remapRes = map (\(csvName, setter) ->
                         case M.lookup csvName row of
-                          Just val -> Right (internalName, val)
+                          Just val -> 
+                              Right $ \nr -> M.delete csvName $ setter val nr
                           Nothing -> Left csvName
                        )
-                   keyMapping
-        (missingColumns, results) = partitionEithers remapRes
+                   elems
+        (missingColumns, aps) = partitionEithers remapRes
     in
       if null missingColumns
-      then Right $ M.fromList results
+      then Right $ foldl1 (.) aps row
       else Left $ MissingColumns missingColumns
 
 
@@ -560,7 +616,9 @@ processData :: Int
             -> IO ()
 processData cp input output dicts = do
   let processors = runReader mkValidationProcessors dicts ++
-                   [remappingProcessor carmaFieldMapping]
+                   [ remappingProcessor $ Simple carmaFieldMapping
+                   , remappingProcessor $ JSON carmaJsonFieldMapping
+                   ]
       newPartnerProcessors = [fieldSetterProcessor carmaConstFields]
       bom = B8.pack ['\xef', '\xbb', '\xbf']
 
@@ -568,12 +626,15 @@ processData cp input output dicts = do
   BS.writeFile output bom
 
   -- Read head row to find out column order
-  Just headRow <- runResourceT $
-       sourceIOHandle (skipBomInputHandle input) $=
-       CSV.intoCSV csvSettings $$
-       CL.head :: IO (Maybe (CSV.Row BS.ByteString))
+  hr <- runResourceT $
+        sourceIOHandle (skipBomInputHandle input) $=
+        CSV.intoCSV csvSettings $$
+        CL.head :: IO (Maybe (CSV.Row BS.ByteString))
   -- Start output file with header row. We use sinkHandle to *append*
   -- processing results after bom header row.
+  let headRow = case hr of
+                  Just h -> h
+                  Nothing -> error "Could not read input file"
   runResourceT $ yield headRow $= CSV.fromCSV csvSettings $$
                  sinkIOHandle (openFile output AppendMode)
 

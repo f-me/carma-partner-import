@@ -1,5 +1,5 @@
 name:                carma-partner-import
-version:             0.4
+version:             0.5
 synopsis:            CaRMa partner import library and tool
 license-file:        LICENSE
 author:              Dmitry Dzhus
@@ -20,7 +20,7 @@ library
     base                   == 4.6.*,
     bytestring             == 0.10.*,
     carma-dict             == 0.1.*,
-    carma-http             == 0.3.*,
+    carma-http             == 0.4.*,
     conduit                == 1.0.*,
     containers             == 0.5.*,
     csv-conduit            == 0.5.*,
@@ -42,7 +42,7 @@ executable carma-partner-importer
     base                   == 4.6.*,
     bytestring             == 0.10.*,
     carma-dict             == 0.1.*,
-    carma-http             == 0.3.*,
+    carma-http             == 0.4.*,
     carma-partner-import,
     conduit                == 1.0.*,
     containers             == 0.5.*,
