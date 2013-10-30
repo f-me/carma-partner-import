@@ -372,8 +372,9 @@ fieldValidationProcessors =
 mkValidationProcessors :: IntegrationMonad [RowProcessor]
 mkValidationProcessors =
     let
-        pureProcessors = [ cityToAddress (e8 "Город") (e8 "Адрес сервисного отдела")
-                         ]
+        pureProcessors =
+            [ cityToAddress (e8 "Город") (e8 "Адрес сервисного отдела")
+            ]
     in do
       fv <- fieldValidationProcessors
       return $ pureProcessors ++ fv
@@ -412,7 +413,7 @@ remappingProcessor mapping row =
                           else M.insert target jsonVal newRow)) l
         remapRes = map (\(csvName, setter) ->
                         case M.lookup csvName row of
-                          Just val -> 
+                          Just val ->
                               Right $ \nr -> M.delete csvName $ setter val nr
                           Nothing -> Left csvName
                        )
@@ -600,7 +601,6 @@ skipBomInputHandle fileName = do
   when (not eof) $ do
     hSetEncoding h char8
     c <- hLookAhead h
-    print c
     when (c == '\xef') $ hSeek h AbsoluteSeek 3
     hSetEncoding h utf8
   return h
