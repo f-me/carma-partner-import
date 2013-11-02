@@ -55,8 +55,11 @@ type Row = CSV.MapRow BS.ByteString
 data IntegrationDicts =
     IntegrationDicts { cityDict    :: Dict
                      -- ^ Dictionary of allowed city names.
+                     , psaCarDict  :: Dict
+                     -- ^ Dictionary of car models allowed in a source
+                     -- file.
                      , carDict     :: Dict
-                     -- ^ Dictionary of allowed car models.
+                     -- ^ Dictionary of all car models.
                      , taxDict     :: Dict
                      -- ^ Dictionary of allowed tax schemes.
                      , servDict    :: Dict
@@ -79,9 +82,10 @@ loadIntegrationDicts cp =
     runCarma defaultCarmaOptions{carmaPort = cp} $ do
       d1 <- readDictionary "DealerCities"
       d2 <- readDictionary "PSACarMakers"
-      d3 <- readDictionary "TaxSchemes"
-      d4 <- readDictionary "PSAServices"
-      return $ liftM4 IntegrationDicts d1 d2 d3 d4
+      d3 <- readDictionary "CarMakers"
+      d4 <- readDictionary "TaxSchemes"
+      d5 <- readDictionary "PSAServices"
+      return $ liftM5 IntegrationDicts d1 d2 d3 d4 d5
 
 
 data RowError = UnknownId
@@ -266,6 +270,9 @@ csvErrorField :: FieldName
 csvErrorField = e8 "Ошибка"
 
 
+cleanupProcessor :: RowProcessor
+cleanupProcessor row = Right $ M.delete csvIdField $ M.delete "" row
+
 -- | Mapping between CSV column names and fields of partner model in
 -- CaRMa.
 --
@@ -275,7 +282,7 @@ carmaFieldMapping =
     [ (e8 "Название Дилера", "name")
     , (e8 "Код дилера", "code")
     , (e8 "Город", "city")
-    , (e8 "Марка", "makers")
+    , (e8 "Марка", "makes")
     , (e8 "Ответственное лицо за Assistance", "personInCharge")
     , (e8 "Форма налогообложения", "taxScheme")
     , (e8 "Услуга (техпомощь / эвакуатор / техпомощь и эвакуатор)", "services")
@@ -359,7 +366,7 @@ fieldValidationProcessors =
         , UnknownCity
         )
       , ( e8 "Марка"
-        , dictField <$> asks carDict
+        , (dictField <$> asks psaCarDict) >> (dictField <$> asks carDict)
         , UnknownCar
         )
       , ( e8 "Форма налогообложения"
@@ -623,6 +630,7 @@ processData cp input output dicts = do
   let processors = runReader mkValidationProcessors dicts ++
                    [ remappingProcessor $ Simple carmaFieldMapping
                    , remappingProcessor $ JSON carmaJsonFieldMapping
+                   , cleanupProcessor
                    ]
       newPartnerProcessors = [fieldSetterProcessor carmaConstFields]
       bom = B8.pack ['\xef', '\xbb', '\xbf']
